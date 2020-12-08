@@ -1,0 +1,125 @@
+#include "header.h"
+
+static float freq[] = {20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 
+                        1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000};
+static float b0[FILTERS], a1[FILTERS], sin_omega[FILTERS];
+
+static float gains[FILTERS];
+static float** buffers = NULL;
+static float* input = NULL;
+
+void init() {
+    for (int id = 0; id < FILTERS; ++id) {
+        float omega = 2 * M_PI * freq[id] / Fs;
+        sin_omega[id] = sin(omega);
+
+        b0[id] = sin_omega[id] / 2;
+        a1[id] = -2 * cos(omega);
+    }
+}
+
+float from_db(float gain) {
+    return pow(10, gain / 20);
+}
+
+void* filter(void* freq_id) {
+    u_int64_t id = (u_int64_t) freq_id;
+    float alpha = sin_omega[id] / 2 * from_db(gains[id]);
+
+    float a0 = 1 + alpha;
+    float a2 = 1 - alpha;
+
+    float x0 = b0[id] / a0;
+    float x1 = 0;
+    float x2 = -x0;
+    float y1 = a1[id] / a0;
+    float y2 = a2 / a0;
+
+    float* output = buffers[id];
+    for (int i = 0; i < BUFFER_SIZE; ++i) {
+        output[i] = x0 * input[i];
+        if (i > 0)
+            output[i] += x1 * input[i - 1] - y1 * input[i - 1];
+        if (i > 1)
+            output[i] += x2 * input[i - 2] - y2 * input[i - 2];
+    }
+}
+
+int main(int argc, char** argv) {
+    mqd_t mq_input = -1;
+    while (mq_input == -1)
+        mq_input = mq_open("/input", O_RDONLY);
+
+    int marker = 0;
+    while (marker != START_MARKER)
+        mq_receive(mq_input, (char*) &marker, MQ_MAX_MSG_SIZE, NULL);
+
+    struct mq_attr attr;
+    attr.mq_maxmsg = MQ_MAX_MSG;
+    attr.mq_msgsize = MQ_MAX_MSG_SIZE;
+    mqd_t mq_output = mq_open(MQ_OUTPUT, O_RDWR | O_CREAT, PERMISSIONS, &attr);
+
+    int fd = open(FILE_INPUT, O_RDONLY);
+    float* input_addr = (float*) mmap(NULL, FILE_SIZE, PROT_READ, MAP_SHARED, fd, MMAP_OFFSET);
+    close(fd);
+    int input_offset = 0;
+
+    fd = open(FILE_OUTPUT, O_RDWR | O_CREAT, PERMISSIONS);
+    lseek(fd, FILE_SIZE, SEEK_SET);
+    write(fd, FILE_END, sizeof(FILE_END));
+    float* output_addr = (float*) mmap(NULL, FILE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, MMAP_OFFSET);
+    close(fd);
+    int output_offset = 0;
+
+    marker = START_MARKER;
+    mq_send(mq_output, (char*) &marker, sizeof(marker), MQ_MSG_PRIO);
+
+    init();
+
+    buffers = malloc(sizeof(float*) * FILTERS);
+    for (int i = 0; i < FILTERS; ++i)
+        buffers[i] = malloc(BUFFER_BYTES);
+    for (int i = 0; i < FILTERS; ++i)
+        gains[i] = i - 20;
+
+    while (1) {
+        mq_receive(mq_input, (char*) &input_offset, MQ_MAX_MSG_SIZE, NULL);
+        //printf("[filter] received %d\n", input_offset);
+        input = input_addr + BUFFER_SIZE * input_offset;
+
+        float* output = output_addr + BUFFER_SIZE * output_offset;
+        int started = 0;
+        pthread_t threads[FILTERS];
+        for (u_int64_t i = 0; i < FILTERS; ++i) {
+            if (gains[i] != 0) {
+                pthread_create(&threads[i], NULL, filter, (void*)i);
+                ++started;
+            }
+        }
+        for (int i = 0; i < BUFFER_SIZE; ++i)
+            output[i] = 0;
+        for (int i = 0; i < FILTERS; ++i) {
+            if (gains[i] != 0) {
+                pthread_join(threads[i], NULL);
+                for (int j = 0; j < BUFFER_SIZE; ++j)
+                    output[j] += buffers[i][j];
+                pthread_cancel(threads[i]);
+            }
+        }
+        for (int i = 0; i < BUFFER_SIZE; ++i)
+            output[i] /= started;
+        msync(output, BUFFER_BYTES, MS_SYNC);
+
+        //printf("[filter] sent %d\n", output_offset);
+        mq_send(mq_output, (char*) &output_offset, MQ_MAX_MSG_SIZE, MQ_MSG_PRIO);
+        output_offset = (output_offset + 1) % BUFFERS_IN_MEM;
+    }
+
+    munmap(output_addr, FILE_SIZE);
+    mq_close(mq_input);
+    mq_close(mq_output);
+    for (int i = 0; i < FILTERS; ++i)
+        free(buffers[i]);
+    free(buffers);
+    pthread_exit(NULL);
+}

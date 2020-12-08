@@ -1,14 +1,17 @@
 CC=gcc
-CFLAGS=-lasound
+CFLAGS=-lasound -g -lrt -lpthread -lm
 ODIR=build
 
 capture: capture.c
-	$(CC) -c capture.c -o $(ODIR)/capture $(CFLAGS)
+	$(CC) capture.c -o $(ODIR)/capture $(CFLAGS)
 
 playback: playback.c
-	$(CC) -c playback.c -o $(ODIR)/playback $(CFLAGS)
+	$(CC) playback.c -o $(ODIR)/playback $(CFLAGS)
 
-all: capture playback
+filter: filter.c
+	$(CC) filter.c -o $(ODIR)/filter $(CFLAGS)
+
+all: capture playback filter
 
 .PHONY: clean
 clean:
