@@ -11,7 +11,10 @@ playback: playback.c
 filter: filter.c
 	$(CC) filter.c -o $(ODIR)/filter $(CFLAGS)
 
-all: capture playback filter
+settings: settings.c
+	$(CC) settings.c -o $(ODIR)/settings $(CFLAGS)
+
+all: capture playback filter settings
 
 .PHONY: clean
 clean:

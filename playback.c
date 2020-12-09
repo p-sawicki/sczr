@@ -16,6 +16,7 @@ int main() {
   snd_pcm_t *handle;
   snd_pcm_open(&handle, DEVICE_NAME, SND_PCM_STREAM_PLAYBACK, PCM_BLOCKING);
   snd_pcm_set_params(handle, SND_PCM_FORMAT_FLOAT, SND_PCM_ACCESS_RW_INTERLEAVED, CHANNELS, Fs, RESAMPLE, LATENCY);
+  sleep(3);
 
   while (1) {
     int offset = 0;

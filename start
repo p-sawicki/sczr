@@ -1,7 +1,5 @@
 #!/bin/bash
 
 build/capture &
-sleep .2
 build/filter &
-sleep .2
 build/playback &

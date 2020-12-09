@@ -7,6 +7,7 @@ static float b0[FILTERS], a1[FILTERS], sin_omega[FILTERS];
 static float gains[FILTERS];
 static float** buffers = NULL;
 static float* input = NULL;
+mqd_t mq_settings;
 
 void init() {
     for (int id = 0; id < FILTERS; ++id) {
@@ -45,10 +46,28 @@ void* filter(void* freq_id) {
     }
 }
 
+void *settings(void *p) {
+    int buf[2];
+    while (1) {
+        int i = mq_receive(mq_settings, (char*) buf, MQ_SETTINGS_MAX_MSG_SIZE, NULL);
+        int err = errno;
+        printf("[filter] received setting: set gain %d for freq %d\n", buf[1], buf[0]);
+        gains[buf[0]] = buf[1];
+    }
+}
+
 int main(int argc, char** argv) {
+    struct mq_attr settings_attr;
+    settings_attr.mq_maxmsg = MQ_MAX_MSG;
+    settings_attr.mq_msgsize = MQ_SETTINGS_MAX_MSG_SIZE;
+    mq_settings = mq_open(MQ_SETTINGS, O_RDWR | O_CREAT, PERMISSIONS, &settings_attr);
+    pthread_t settings_thread;
+    int i = pthread_create(&settings_thread, NULL, settings, NULL);
+    int err = errno;
+
     mqd_t mq_input = -1;
     while (mq_input == -1)
-        mq_input = mq_open("/input", O_RDONLY);
+        mq_input = mq_open(MQ_INPUT, O_RDONLY);
 
     int marker = 0;
     while (marker != START_MARKER)
@@ -77,10 +96,10 @@ int main(int argc, char** argv) {
     init();
 
     buffers = malloc(sizeof(float*) * FILTERS);
-    for (int i = 0; i < FILTERS; ++i)
+    for (int i = 0; i < FILTERS; ++i) {
         buffers[i] = malloc(BUFFER_BYTES);
-    for (int i = 0; i < FILTERS; ++i)
-        gains[i] = i - 20;
+        //gains[i] = 1;
+    }
 
     while (1) {
         mq_receive(mq_input, (char*) &input_offset, MQ_MAX_MSG_SIZE, NULL);
@@ -91,10 +110,8 @@ int main(int argc, char** argv) {
         int started = 0;
         pthread_t threads[FILTERS];
         for (u_int64_t i = 0; i < FILTERS; ++i) {
-            if (gains[i] != 0) {
+            if (gains[i] != 0)
                 pthread_create(&threads[i], NULL, filter, (void*)i);
-                ++started;
-            }
         }
         for (int i = 0; i < BUFFER_SIZE; ++i)
             output[i] = 0;
@@ -104,10 +121,14 @@ int main(int argc, char** argv) {
                 for (int j = 0; j < BUFFER_SIZE; ++j)
                     output[j] += buffers[i][j];
                 pthread_cancel(threads[i]);
+                ++started;
             }
         }
-        for (int i = 0; i < BUFFER_SIZE; ++i)
-            output[i] /= started;
+        if (started != 0) {
+            for (int i = 0; i < BUFFER_SIZE; ++i)
+                output[i] /= started;
+        } else
+            memcpy(output, input, BUFFER_BYTES);
         msync(output, BUFFER_BYTES, MS_SYNC);
 
         //printf("[filter] sent %d\n", output_offset);

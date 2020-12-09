@@ -30,6 +30,8 @@
 #define MQ_MAX_MSG_SIZE 4
 #define MQ_INPUT "/input"
 #define MQ_OUTPUT "/output"
+#define MQ_SETTINGS "/settings"
+#define MQ_SETTINGS_MAX_MSG_SIZE 8
 #define MQ_MSG_PRIO 0
 
 #define PERMISSIONS 0777
