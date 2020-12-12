@@ -1,6 +1,9 @@
 #include "header.h"
 
-int main() {
+int main(int argc, char** argv) {
+  printf("[capture] start\n");
+  set_sched();
+
   struct mq_attr attr;
   attr.mq_maxmsg = MQ_MAX_MSG;
   attr.mq_msgsize = MQ_MAX_MSG_SIZE;
@@ -21,20 +24,29 @@ int main() {
   snd_pcm_open(&handle, DEVICE_NAME, SND_PCM_STREAM_CAPTURE, PCM_BLOCKING);
   snd_pcm_set_params(handle, SND_PCM_FORMAT_FLOAT, SND_PCM_ACCESS_RW_INTERLEAVED, CHANNELS, Fs, RESAMPLE, LATENCY);
 
-  while (1) {
+  FILE* log = fopen(LOG_CAPTURE, "w");
+  int sample_id = 0;
+  int samples = __INT_MAX__;
+  if (argc > 1)
+    samples = atoi(argv[1]);
+
+  while (sample_id < samples) {
     float* addr = input_addr + buffer_offset * BUFFER_SIZE;
     if (snd_pcm_readi(handle, addr, BUFFER_SIZE) == -1)
       printf("[capture] ERROR");
     msync(addr, BUFFER_BYTES, MS_SYNC);
 
+    fprintf(log, "%d %lld\n", sample_id, time_ms());
     mq_send(mq_descriptor, (char*) &buffer_offset, MQ_MAX_MSG_SIZE, MQ_MSG_PRIO);
-    //printf("[capture] sent %d\n", buffer_offset);
     buffer_offset = (buffer_offset + 1) % BUFFERS_IN_MEM;
+    ++sample_id;
   }
 
+  fclose(log);
   munmap(input_addr, FILE_SIZE);
   mq_close(mq_descriptor);
   snd_pcm_drain(handle);
   snd_pcm_close(handle);
+  printf("[capture] end\n");
   return 0;
 }

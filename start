@@ -1,5 +1,21 @@
 #!/bin/bash
 
-build/capture &
-build/filter &
-build/playback &
+SAMPLES=1000
+GAIN=20
+
+rm -f /tmp/input /tmp/output /tmp/settings
+i=0
+while [ $i -lt 31 ]
+do
+    build/filter $SAMPLES &
+    j=0
+    while [ $j -lt $i ]
+    do
+        build/settings $j $GAIN
+        j=$[$j+1]
+    done
+    build/capture $SAMPLES &
+    build/playback $SAMPLES
+    sleep 3
+    python3 results.py $i
+done

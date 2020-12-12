@@ -10,11 +10,13 @@
 #include <sys/mman.h>
 #include <errno.h>
 #include <stdio.h>
+#include <sys/time.h>
+#include <sched.h>
 
 #define ALSA_PCM_NEW_HW_PARAMS_API
 
 #define BUFFER_SIZE 2400
-#define BUFFER_BYTES 2400 * 4
+#define BUFFER_BYTES BUFFER_SIZE * 4
 #define BUFFERS_IN_MEM 16
 #define START_MARKER 420
 
@@ -37,8 +39,25 @@
 #define PERMISSIONS 0777
 #define FILE_INPUT "/tmp/input"
 #define FILE_OUTPUT "/tmp/output"
-#define FILE_SIZE 4 * BUFFER_SIZE * BUFFERS_IN_MEM
+#define FILE_SIZE BUFFER_BYTES * BUFFERS_IN_MEM
 #define FILE_END "\0"
 #define MMAP_OFFSET 0
+
+#define LOG_CAPTURE "/tmp/log-capture"
+#define LOG_FILTER "/tmp/log-filter"
+#define LOG_PLAYBACK "/tmp/log-playback"
+
+long long time_ms(void) {
+    struct timeval tv;
+
+    gettimeofday(&tv,NULL);
+    return (((long long) tv.tv_sec) * 1000)+(tv.tv_usec / 1000);
+}
+
+int set_sched() {
+    struct sched_param sp;
+    sp.sched_priority = sched_get_priority_max(SCHED_RR);
+    return sched_setscheduler(0, SCHED_RR, &sp);
+}
 
 #endif // HEADER_H

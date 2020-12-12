@@ -51,12 +51,15 @@ void *settings(void *p) {
     while (1) {
         int i = mq_receive(mq_settings, (char*) buf, MQ_SETTINGS_MAX_MSG_SIZE, NULL);
         int err = errno;
-        printf("[filter] received setting: set gain %d for freq %d\n", buf[1], buf[0]);
+        printf("[filter] received setting: set gain %d for freq %d\n", buf[1], (int) freq[buf[0]]);
         gains[buf[0]] = buf[1];
     }
 }
 
 int main(int argc, char** argv) {
+    printf("[filter] start\n");
+    set_sched();
+
     struct mq_attr settings_attr;
     settings_attr.mq_maxmsg = MQ_MAX_MSG;
     settings_attr.mq_msgsize = MQ_SETTINGS_MAX_MSG_SIZE;
@@ -90,6 +93,12 @@ int main(int argc, char** argv) {
     close(fd);
     int output_offset = 0;
 
+    FILE* log = fopen(LOG_FILTER, "w");
+    int sample_id = 0;
+    int samples = __INT_MAX__;
+    if (argc > 1)
+        samples = atoi(argv[1]);
+
     marker = START_MARKER;
     mq_send(mq_output, (char*) &marker, sizeof(marker), MQ_MSG_PRIO);
 
@@ -98,12 +107,10 @@ int main(int argc, char** argv) {
     buffers = malloc(sizeof(float*) * FILTERS);
     for (int i = 0; i < FILTERS; ++i) {
         buffers[i] = malloc(BUFFER_BYTES);
-        //gains[i] = 1;
     }
 
-    while (1) {
+    while (sample_id < samples) {
         mq_receive(mq_input, (char*) &input_offset, MQ_MAX_MSG_SIZE, NULL);
-        //printf("[filter] received %d\n", input_offset);
         input = input_addr + BUFFER_SIZE * input_offset;
 
         float* output = output_addr + BUFFER_SIZE * output_offset;
@@ -120,7 +127,6 @@ int main(int argc, char** argv) {
                 pthread_join(threads[i], NULL);
                 for (int j = 0; j < BUFFER_SIZE; ++j)
                     output[j] += buffers[i][j];
-                pthread_cancel(threads[i]);
                 ++started;
             }
         }
@@ -131,16 +137,20 @@ int main(int argc, char** argv) {
             memcpy(output, input, BUFFER_BYTES);
         msync(output, BUFFER_BYTES, MS_SYNC);
 
-        //printf("[filter] sent %d\n", output_offset);
+        fprintf(log, "%d %lld\n", sample_id, time_ms());
         mq_send(mq_output, (char*) &output_offset, MQ_MAX_MSG_SIZE, MQ_MSG_PRIO);
         output_offset = (output_offset + 1) % BUFFERS_IN_MEM;
+        ++sample_id;
     }
 
+    pthread_cancel(settings_thread);
+    fclose(log);
     munmap(output_addr, FILE_SIZE);
     mq_close(mq_input);
     mq_close(mq_output);
     for (int i = 0; i < FILTERS; ++i)
         free(buffers[i]);
     free(buffers);
-    pthread_exit(NULL);
+    printf("[filter] end\n");
+    return 0;
 }
