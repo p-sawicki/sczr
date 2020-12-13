@@ -23,6 +23,7 @@ int main(int argc, char** argv) {
   snd_pcm_t *handle;
   snd_pcm_open(&handle, DEVICE_NAME, SND_PCM_STREAM_CAPTURE, PCM_BLOCKING);
   snd_pcm_set_params(handle, SND_PCM_FORMAT_FLOAT, SND_PCM_ACCESS_RW_INTERLEAVED, CHANNELS, Fs, RESAMPLE, LATENCY);
+  snd_pcm_prepare(handle);
 
   FILE* log = fopen(LOG_CAPTURE, "w");
   int sample_id = 0;

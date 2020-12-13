@@ -2,10 +2,11 @@
 
 SAMPLES=1000
 GAIN=20
+FILTERS=31
 
 rm -f /tmp/input /tmp/output /tmp/settings
 i=0
-while [ $i -lt 31 ]
+while [ $i -lt $FILTERS ]
 do
     build/filter $SAMPLES &
     j=0
@@ -18,4 +19,5 @@ do
     build/playback $SAMPLES
     sleep 3
     python3 results.py $i
+    i=$[$i+1]
 done

@@ -25,7 +25,8 @@ int main(int argc, char** argv) {
   snd_pcm_t *handle;
   snd_pcm_open(&handle, DEVICE_NAME, SND_PCM_STREAM_PLAYBACK, PCM_BLOCKING);
   snd_pcm_set_params(handle, SND_PCM_FORMAT_FLOAT, SND_PCM_ACCESS_RW_INTERLEAVED, CHANNELS, Fs, RESAMPLE, LATENCY);
-  sleep(3);
+  snd_pcm_prepare(handle);
+  //sleep(3);
 
   while (sample_id < samples) {
     int offset = 0;
